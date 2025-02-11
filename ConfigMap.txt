@@ -1,0 +1,151 @@
+Sure! Let's break it down step by step. First, we'll create the **ConfigMap**, then create the **Secret**, and finally set up the **Deployment** with **VolumeMounts** and **Volumes**.
+
+### **Step 1: Create the ConfigMap**
+
+A **ConfigMap** stores non-sensitive configuration data, like database hostnames or ports. Here's an example ConfigMap that stores `db-host` and `db-port`:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-cm
+data:
+  db-host: "mysql-service"
+  db-port: "3306"
+```
+
+#### Apply the ConfigMap:
+```bash
+kubectl apply -f configmap.yaml
+```
+
+### **Step 2: Create the Secret**
+
+A **Secret** stores sensitive data like passwords or tokens. In this case, we'll store the `db-user` and `db-password`.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: test-secret
+type: Opaque
+data:
+  db-user: "cm9vdA=="   # "root" encoded in Base64
+  db-password: "cGFzc3dvcmQ="  # "password" encoded in Base64
+```
+
+#### Apply the Secret:
+```bash
+kubectl apply -f secret.yaml
+```
+
+To generate **Base64-encoded** values for secrets:
+```bash
+echo -n "root" | base64
+echo -n "password" | base64
+```
+
+### **Step 3: Create the Deployment with VolumeMounts and Volumes**
+
+Now that we have the **ConfigMap** and **Secret**, let's create a **Deployment** where:
+- **ConfigMap** is used for environment variables.
+- **ConfigMap** and **Secret** are mounted as volumes.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+        env:
+        # ConfigMap থেকে পরিবেশ ভেরিয়েবল
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: test-cm
+              key: db-host
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: test-cm
+              key: db-port
+
+        # Secret থেকে পরিবেশ ভেরিয়েবল
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: test-secret
+              key: db-user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: test-secret
+              key: db-password
+
+        volumeMounts:
+        - name: config-volume
+          mountPath: "/etc/config"  # ConfigMap ফাইল হিসেবে মাউন্ট
+        - name: secret-volume
+          mountPath: "/etc/secret"  # Secret ফাইল হিসেবে মাউন্ট
+          readOnly: true
+
+      volumes:
+      - name: config-volume
+        configMap:
+          name: test-cm  # ConfigMap থেকে ডেটা লোড হবে
+      - name: secret-volume
+        secret:
+          secretName: test-secret  # Secret থেকে ডেটা লোড হবে
+```
+
+#### Apply the Deployment:
+```bash
+kubectl apply -f deployment.yaml
+```
+
+### **What Happens Here?**
+1. **ConfigMap** values (`db-host` and `db-port`) are set as environment variables (`DB_HOST` and `DB_PORT`) inside the container.
+2. The **ConfigMap** is also mounted as a volume at `/etc/config`, making the keys (`db-host`, `db-port`) available as files.
+3. The **Secret** (`db-user` and `db-password`) is set as environment variables and mounted as files at `/etc/secret`.
+
+### **Step 4: Verify the Setup**
+
+After the deployment is created, verify the configuration:
+
+1. **Check the logs to confirm environment variables are set**:
+   ```bash
+   kubectl exec -it <nginx-pod-name> -- env | grep DB_
+   ```
+
+2. **Verify the files inside the pod** (for ConfigMap and Secret):
+   ```bash
+   kubectl exec -it <nginx-pod-name> -- ls /etc/config
+   kubectl exec -it <nginx-pod-name> -- ls /etc/secret
+   ```
+
+3. **Check the content of the files**:
+   ```bash
+   kubectl exec -it <nginx-pod-name> -- cat /etc/config/db-host
+   kubectl exec -it <nginx-pod-name> -- cat /etc/secret/db-user
+   ```
+
+### **Summary**
+- We created a **ConfigMap** and **Secret**.
+- We used the **ConfigMap** and **Secret** both as environment variables and mounted them as files inside the pod.
+- The **Deployment** was created to inject the values from **ConfigMap** and **Secret** into the container.
+
+---
+
+Feel free to let me know if you need any further explanation or assistance!
